@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- Offline stand-in for the Zoom web client, used by test/run-tests.sh.
+     Query params: wait=S (waiting-for-host seconds), end=S (host ends after S seconds in meeting),
+     back=S (stream goes offline: back to waiting-for-host after S seconds in meeting). -->
+<html><body style="margin:0;background:#222;color:#fff;font:24px sans-serif;overflow:hidden">
+<div id="waiting" hidden>Waiting for host to start the webinar</div>
+<canvas id="c" width="1920" height="1000" hidden></canvas>
+<div id="dlg" role="dialog" hidden style="position:fixed;top:40%;left:40%;background:#fff;color:#000;padding:20px">
+  <button id="ja">Join Audio by Computer</button></div>
+<div id="wc-footer" hidden><button aria-label="Leave">Leave</button></div>
+<div id="ended" hidden>This webinar has been ended by host</div>
+<script>
+const q = new URLSearchParams(location.search), $ = id => document.getElementById(id);
+const wait = Number(q.get('wait') || 0), end = Number(q.get('end') || 0), back = Number(q.get('back') || 0);
+$('waiting').hidden = !wait;
+setTimeout(() => {                       // host starts: meeting UI + late audio prompt
+  $('waiting').hidden = true; $('c').hidden = false; $('wc-footer').hidden = false;
+  setTimeout(() => { $('dlg').hidden = false; }, 1500);
+  const ctx = $('c').getContext('2d'); let t0 = performance.now();
+  (function draw() {                     // moving box + clock so frames differ
+    const t = (performance.now() - t0) / 1000;
+    ctx.fillStyle = `hsl(${(t * 40) % 360},60%,30%)`; ctx.fillRect(0, 0, 1920, 1000);
+    ctx.fillStyle = '#fff'; ctx.fillRect(100 + (t * 300) % 1600, 400, 200, 200);
+    ctx.font = '80px sans-serif'; ctx.fillText(t.toFixed(1) + ' s', 100, 150);
+    requestAnimationFrame(draw);
+  })();
+  if (back) setTimeout(() => { $('c').hidden = true; $('wc-footer').remove(); $('waiting').hidden = false; }, back * 1000);
+  if (end) setTimeout(() => { $('c').hidden = true; $('wc-footer').remove(); $('ended').hidden = false; }, end * 1000);
+}, wait * 1000);
+$('ja').onclick = () => {                // audio only after "joining audio": 440 Hz tone alternating loud/quiet each second
+  $('dlg').hidden = true;
+  const ac = new AudioContext(), o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.value = 440; o.connect(g).connect(ac.destination); o.start();
+  setInterval(() => { g.gain.value = g.gain.value > 0.3 ? 0.1 : 0.5; }, 1000);
+};
+</script></body></html>
