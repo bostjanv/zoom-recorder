@@ -7,7 +7,7 @@ W=${1:-$(mktemp -d)}; mkdir -p "$W"
 FAKE="file://$PWD/test/fake-meeting.html"
 pass=0; fail=0
 check() { if eval "$2"; then echo "  ok   $1"; pass=$((pass+1)); else echo "  FAIL $1"; fail=$((fail+1)); fi; }
-leftovers() { pgrep -x 'Xvfb|pulseaudio|ffmpeg' >/dev/null || pgrep -f 'ms-playwright/chromium' >/dev/null; }
+leftovers() { pgrep -x 'Xvfb|pulseaudio|ffmpeg' >/dev/null || pgrep -f 'ms-playwright/chromium' >/dev/null || pgrep -fx 'sleep infinity' >/dev/null; }
 start() { # name url duration [extra args...]; sets PID, LOG, OUT
   OUT=$W/$1.mkv; LOG=$W/$1.log; local u=$2 d=$3; shift 3
   node zoom-record.js -u "$u" -d "$d" -o "$OUT" "$@" >"$LOG" 2>&1 & PID=$!

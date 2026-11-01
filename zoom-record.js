@@ -68,11 +68,13 @@ async function stopChild(p, name, graceMs = 5000) {
 }
 // If we die abruptly (SIGKILL, OOM), this guardian gets SIGTERM via pdeathsig. It stops ffmpeg first so the MKV
 // is finalized (ffmpeg's pulse input deadlocks if PulseAudio vanishes first), then the other helpers, then removes dir.
+// pdeathsig fires again each time a dying parent thread hands us to the next one, so the trap ignores repeats: a
+// second SIGTERM makes ffmpeg exit immediately without writing the file.
 function startGuardian(dir) {
-  const script = `cd "$1"; trap 'kill $s; f=$(cat ffmpeg.pid 2>/dev/null); [ -n "$f" ] && kill -TERM $f
+  const script = `cd "$1"; trap 'trap "" TERM; kill $s; f=$(cat ffmpeg.pid 2>/dev/null); [ -n "$f" ] && kill -TERM $f
     i=0; while [ -n "$f" ] && kill -0 $f 2>/dev/null && [ $i -lt 40 ]; do sleep 0.5; i=$((i+1)); done
     kill -TERM $f $(cat pids) 2>/dev/null; sleep 2; kill -KILL $f $(cat pids) 2>/dev/null; cd /; rm -rf "$1"; exit' TERM
-    sleep infinity & s=$!; wait`;
+    setpriv --pdeathsig SIGKILL sleep infinity & s=$!; wait`; // the sleep must not outlive a SIGKILLed guardian
   return spawn('setpriv', ['--pdeathsig', 'SIGTERM', '--', 'sh', '-c', script, 'guardian', dir], { stdio: 'ignore' });
 }
 const pactl = (env, ...a) => execFileSync('pactl', a, { env, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] });
