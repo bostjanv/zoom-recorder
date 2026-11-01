@@ -172,6 +172,21 @@ async function tryClick(page, kind, re) {
   }
   return false;
 }
+// Close a persistent notice banner whose × is often not a <button>: walk up from the notice text to the nearest
+// small container holding a close control, click it, and hide that container in case the click does nothing.
+async function dismissBanner(page, re) {
+  return page.evaluate(src => {
+    const re = new RegExp(src, 'i'), CLOSE = '[aria-label*=close i], [class*=close i], [title*=close i]';
+    const leaf = [...document.body.querySelectorAll('*')].reverse().find(e => re.test(e.innerText || '') && e.getClientRects().length);
+    if (!leaf) return false;
+    let box = leaf;
+    while (!box.querySelector(CLOSE) && box.parentElement && box.parentElement !== document.body && box.parentElement.innerText.length < 300)
+      box = box.parentElement;
+    box.querySelector(CLOSE)?.click();
+    box.style.setProperty('display', 'none', 'important');
+    return true;
+  }, re.source).catch(() => false);
+}
 async function inMeetingUi(page) {
   // The footer auto-hides, so test presence of meeting controls in DOM rather than visibility.
   return page.evaluate(() => !!document.querySelector('#wc-footer, .footer__leave-btn, [class*="footer__leave-btn"]')).catch(() => false);
@@ -191,6 +206,9 @@ async function tick(page, opts, st) {
   if (RE.captcha.test(text) || await page.locator('iframe[src*="recaptcha"][src*="bframe"]').first().isVisible().catch(() => false))
     return 'captcha';
   if (RE.fatal.test(text)) return 'fatal';
+  if (/hardware acceleration/i.test(text) && await dismissBanner(page, /hardware acceleration/i)) {
+    log('dismissed hardware acceleration banner'); return 'acting';
+  }
   for (const [label, kind, re, onlyIf] of CLICKS) {
     if (onlyIf && !onlyIf.test(text)) continue;
     const c = await tryClick(page, kind, re);

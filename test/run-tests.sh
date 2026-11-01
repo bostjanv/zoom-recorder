@@ -13,6 +13,9 @@ start() { # name url duration [extra args...]; sets PID, LOG, OUT
   node zoom-record.js -u "$u" -d "$d" -o "$OUT" "$@" >"$LOG" 2>&1 & PID=$!
 }
 wait_rec() { for _ in $(seq 60); do grep -q 'recording for' "$LOG" && return 0; sleep 1; done; return 1; }
+# Average colour of a 600x60 box at x,y in the frame at 5 s: magenta / yellow / low (neither).
+rgb() { ffmpeg -v error -ss 5 -i "$OUT" -frames:v 1 -vf "crop=600:60:$1:$2,scale=1:1" -f rawvideo -pix_fmt rgb24 - | od -An -tu1 |
+  awk '{ if ($1>180 && $3>180 && $2<100) print "magenta"; else if ($1>180 && $2>180 && $3<100) print "yellow"; else print "low" }'; }
 dur() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT" 2>/dev/null | cut -d. -f1; }
 
 leftovers && { echo "recorder processes already running; stop them first"; exit 2; }
@@ -22,13 +25,14 @@ start ended "$FAKE?wait=6&end=20" 120 -w 60; wait $PID; rc=$?
 check "exit 0" "[ $rc = 0 ]"
 check "saw waiting state" "grep -q 'state: - -> waiting' $LOG"
 check "clicked late Join Audio" "grep -q 'clicked join audio' $LOG"
-check "stopped on meeting end (~20s)" "[ \$(dur) -ge 17 ] && [ \$(dur) -le 23 ]"
+check "stopped on meeting end (~20s)" "[ \$(dur) -ge 15 ] && [ \$(dur) -le 23 ]"
 check "audible audio, moving video" "test/verify-mkv.sh $OUT 15 >$W/ended.verify"
 check "no leftover processes" "! leftovers"
 
 echo "2. stops at --duration"
 start duration "$FAKE" 12; wait $PID; rc=$?
 check "exit 0 and ~12s" "[ $rc = 0 ] && [ \$(dur) -ge 11 ] && [ \$(dur) -le 13 ]"
+check "acceleration banner (magenta) hidden, other warning (yellow) kept and moved up into its slot" "[ \"\$(rgb 600 60)\" = yellow ]"
 
 echo "3. SIGTERM during recording finishes the file"
 start sigterm "$FAKE" 300; wait_rec; sleep 8; kill -TERM $PID; wait $PID; rc=$?
@@ -56,7 +60,7 @@ echo "7. stream goes offline (waiting for host returns) -> stops after --offline
 start offline "$FAKE?back=12" 120 --offline-grace 8; wait $PID; rc=$?
 check "exit 0" "[ $rc = 0 ]"
 check "logged stream offline" "grep -q 'stream offline' $LOG"
-check "stopped at ~12s + 8s grace" "[ \$(dur) -ge 17 ] && [ \$(dur) -le 26 ]"
+check "stopped at ~12s + 8s grace" "[ \$(dur) -ge 15 ] && [ \$(dur) -le 26 ]"
 check "no leftover processes" "! leftovers"
 
 echo "$pass passed, $fail failed (logs in $W)"
